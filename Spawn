@@ -1,55 +1,29 @@
 --[[
-    ██████╗ ██████╗  ██████╗ ██╗    ██╗     █████╗     ██████╗  █████╗ ██████╗ ██████╗ ███████╗███╗   ██╗
-    ██╔════╝ ██╔══██╗██╔═══██╗██║    ██║    ██╔══██╗    ██╔══██╗██╔══██╗██╔══██╗██╔══██╗██╔════╝████╗  ██║
-    ██║  ███╗██████╔╝██║   ██║██║ █╗ ██║    ███████║    ██████╔╝███████║██████╔╝██║  ██║█████╗  ██╔██╗ ██║
-    ██║   ██║██╔══██╗██║   ██║██║███╗██║    ██╔══██║    ██╔══██╗██╔══██║██╔══██╗██║  ██║██╔══╝  ██║╚██╗██║
-    ╚██████╔╝██║  ██║╚██████╔╝╚███╔███╔╝    ██║  ██║    ██║  ██║██║  ██║██║  ██║██████╔╝███████╗██║ ╚████║
-     ╚═════╝ ╚═╝  ╚═╝ ╚═════╝  ╚══╝╚══╝     ╚═╝  ╚═╝    ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═══╝
-    
-    Grow A Garden 2 - Ultimate AutoFarm (Fully Upgraded)
+    🔥 Grow A Garden 2 - Delta AutoFarm (Fully Upgraded) 🔥
+    Works with: Delta Executor (mobile & PC)
     Features:
       ✅ Auto Harvest (radius configurable)
-      ✅ Auto Plant (prioritizes Rainbow/Gold/Normal based on your choice)
-      ✅ Auto Sell (crops only)
-      ✅ Auto Water (equips watering can, waters dry plants)
+      ✅ Auto Plant (prioritises Rainbow / Gold / Normal based on your choice)
+      ✅ Auto Sell
+      ✅ Auto Water
       ✅ Auto Collect (rainbow/gold seeds from ground)
-      ✅ Auto Buy Seeds (when below minSeeds)
-      ✅ Anti-AFK (prevents kick)
-      ✅ GUI with real‑time toggle (press K)
+      ✅ Auto Buy Seeds
+      ✅ Anti‑AFK (jump every 45 seconds)
+      ✅ Simple GUI (dragable, toggle buttons)
     
-    Works with latest game version (June 2026)
-    Compatible executors: Solara, Wave, Arceus X, Delta, CodeX, Synapse Z
-    
-    🔥 NO KEY SYSTEM – OPEN SOURCE 🔥
+    No external libraries – pure Lua, 100% Delta safe.
+    Press [ K ] to toggle the GUI on/off.
 ]]
 
 -- ==============================
---          SETUP GUI
--- ==============================
-local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Rayfield/main/source"))()
-local Window = Rayfield:CreateWindow({
-    Name = "Grow A Garden 2 🥕",
-    Icon = 0,
-    LoadingTitle = "AutoFarm",
-    LoadingSubtitle = "Fully Upgraded",
-    Theme = "Default",
-    ToggleUIKeybind = "K",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "GaG2_AutoFarm",
-        FileName = "Config"
-    }
-})
-
--- ==============================
---          CONSTANTS
+--          SETUP
 -- ==============================
 local player = game.Players.LocalPlayer
 local replicatedStorage = game:GetService("ReplicatedStorage")
-local virtualUser = game:GetService("VirtualUser")
-local runService = game:GetService("RunService")
+local userInputService = game:GetService("UserInputService")
+local virtualUser = game:GetService("VirtualUser")  -- may not work on Delta, but kept for compatibility
 
--- Default settings (will be linked to GUI)
+-- Settings (adjust via GUI)
 local settings = {
     autoHarvest = true,
     autoPlant = true,
@@ -75,7 +49,7 @@ local function getHumanoidRootPart()
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
--- Safe click detector
+-- Safe click (works on Delta)
 local function clickDetector(detector)
     if detector and detector.Parent then
         pcall(function()
@@ -162,7 +136,7 @@ local function autoPlant()
                 priority = 3
             elseif settings.preferredSeed == "Gold" and name:find("Gold") then
                 priority = 3
-            elseif settings.preferredSeed == "Normal" and (name:find("Normal") or name:find("Seed") and not name:find("Rainbow") and not name:find("Gold")) then
+            elseif settings.preferredSeed == "Normal" and (name:find("Normal") or (name:find("Seed") and not name:find("Rainbow") and not name:find("Gold"))) then
                 priority = 3
             elseif name:find("Rainbow") then
                 priority = 2
@@ -184,33 +158,23 @@ local function autoPlant()
         seed.Parent = player.Character
         task.wait(0.3)
         
-        -- Method 1: Use remote "PlantSeed" (common)
-        local plantRemote = replicatedStorage:FindFirstChild("PlantSeed")
+        -- Try remote events (most common)
+        local plantRemote = replicatedStorage:FindFirstChild("PlantSeed") or
+                            replicatedStorage:FindFirstChild("Plant") or
+                            replicatedStorage:FindFirstChild("GrowPlant")
         if plantRemote then
             pcall(function()
                 plantRemote:FireServer(seed)
             end)
             task.wait(0.5)
         else
-            -- Method 2: Try alternative remote names
-            local altRemote = replicatedStorage:FindFirstChild("Plant") or 
-                              replicatedStorage:FindFirstChild("GrowPlant")
-            if altRemote then
-                pcall(function()
-                    altRemote:FireServer(seed)
-                end)
-                task.wait(0.5)
-            else
-                -- Method 3: Fallback – click on an empty plot (requires manual detection)
-                -- In most games, equipping the seed and clicking an empty plot works
-                -- We'll try to find a plot click detector
-                local plots = workspace:GetDescendants()
-                for _, obj in pairs(plots) do
-                    if obj:IsA("ClickDetector") and obj.Parent and obj.Parent.Name:find("Plot") then
-                        clickDetector(obj)
-                        task.wait(0.2)
-                        break
-                    end
+            -- Fallback: click on an empty plot
+            local plots = workspace:GetDescendants()
+            for _, obj in pairs(plots) do
+                if obj:IsA("ClickDetector") and obj.Parent and obj.Parent.Name:find("Plot") then
+                    clickDetector(obj)
+                    task.wait(0.2)
+                    break
                 end
             end
         end
@@ -323,15 +287,16 @@ local function autoBuy()
 end
 
 -- ==============================
---        ANTI AFK
+--        ANTI AFK (Jump method, Delta safe)
 -- ==============================
 local function antiAFK()
     if not settings.antiAFK then return end
-    pcall(function()
-        virtualUser:CaptureController()
-        virtualUser:ClickButton1(Vector2.new())
-    end)
-    task.wait(60)
+    local character = getCharacter()
+    local humanoid = character and character:FindFirstChild("Humanoid")
+    if humanoid then
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+    task.wait(45)
     antiAFK()
 end
 
@@ -350,126 +315,189 @@ local function mainLoop()
 end
 
 -- ==============================
---          GUI CREATION
+--        SIMPLE GUI (Delta friendly)
 -- ==============================
-local MainTab = Window:CreateTab("🏠 Main")
-local SettingsTab = Window:CreateTab("⚙️ Settings")
-local InfoTab = Window:CreateTab("ℹ️ Info")
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "GaG2_AutoFarm"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- Main Tab
-MainTab:CreateToggle({
-    Name = "Auto Harvest",
-    CurrentValue = settings.autoHarvest,
-    Flag = "AutoHarvest",
-    Callback = function(v) settings.autoHarvest = v end
-})
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 220, 0, 320)
+mainFrame.Position = UDim2.new(0, 10, 0, 50)
+mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+mainFrame.BackgroundTransparency = 0.1
+mainFrame.BorderSizePixel = 1
+mainFrame.BorderColor3 = Color3.fromRGB(255, 170, 0)
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
 
-MainTab:CreateToggle({
-    Name = "Auto Plant",
-    CurrentValue = settings.autoPlant,
-    Flag = "AutoPlant",
-    Callback = function(v) settings.autoPlant = v end
-})
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.Text = "Grow A Garden 2 AutoFarm"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.Parent = mainFrame
 
-MainTab:CreateToggle({
-    Name = "Auto Sell",
-    CurrentValue = settings.autoSell,
-    Flag = "AutoSell",
-    Callback = function(v) settings.autoSell = v end
-})
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -35, 0, 0)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Parent = mainFrame
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui.Enabled = false
+end)
 
-MainTab:CreateToggle({
-    Name = "Auto Water",
-    CurrentValue = settings.autoWater,
-    Flag = "AutoWater",
-    Callback = function(v) settings.autoWater = v end
-})
+-- Toggle buttons (y offset increases)
+local yOffset = 40
+local function addToggle(text, flag, default)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.9, 0, 0, 30)
+    btn.Position = UDim2.new(0.05, 0, 0, yOffset)
+    btn.BackgroundColor3 = default and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(150, 50, 50)
+    btn.Text = text .. (default and " ✅" or " ❌")
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 13
+    btn.Parent = mainFrame
+    
+    local state = default
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        settings[flag] = state
+        btn.BackgroundColor3 = state and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(150, 50, 50)
+        btn.Text = text .. (state and " ✅" or " ❌")
+    end)
+    yOffset = yOffset + 35
+end
 
-MainTab:CreateToggle({
-    Name = "Auto Collect (Rainbow/Gold Seeds)",
-    CurrentValue = settings.autoCollect,
-    Flag = "AutoCollect",
-    Callback = function(v) settings.autoCollect = v end
-})
+addToggle("Auto Harvest", "autoHarvest", true)
+addToggle("Auto Plant", "autoPlant", true)
+addToggle("Auto Sell", "autoSell", true)
+addToggle("Auto Water", "autoWater", true)
+addToggle("Auto Collect", "autoCollect", true)
+addToggle("Auto Buy", "autoBuy", true)
+addToggle("Anti AFK", "antiAFK", true)
 
-MainTab:CreateToggle({
-    Name = "Auto Buy Seeds",
-    CurrentValue = settings.autoBuy,
-    Flag = "AutoBuy",
-    Callback = function(v) settings.autoBuy = v end
-})
+-- Radius slider
+local radiusLabel = Instance.new("TextLabel")
+radiusLabel.Size = UDim2.new(0.9, 0, 0, 20)
+radiusLabel.Position = UDim2.new(0.05, 0, 0, yOffset)
+radiusLabel.BackgroundTransparency = 1
+radiusLabel.Text = "Harvest Radius: " .. settings.harvestRadius
+radiusLabel.TextColor3 = Color3.fromRGB(255,255,255)
+radiusLabel.Font = Enum.Font.Gotham
+radiusLabel.TextSize = 12
+radiusLabel.Parent = mainFrame
+yOffset = yOffset + 22
 
-MainTab:CreateToggle({
-    Name = "Anti AFK",
-    CurrentValue = settings.antiAFK,
-    Flag = "AntiAFK",
-    Callback = function(v)
-        settings.antiAFK = v
-        if v then spawn(antiAFK) end
+local radiusSlider = Instance.new("TextBox")
+radiusSlider.Size = UDim2.new(0.9, 0, 0, 25)
+radiusSlider.Position = UDim2.new(0.05, 0, 0, yOffset)
+radiusSlider.BackgroundColor3 = Color3.fromRGB(60,60,60)
+radiusSlider.Text = tostring(settings.harvestRadius)
+radiusSlider.TextColor3 = Color3.fromRGB(255,255,255)
+radiusSlider.PlaceholderText = "10-100"
+radiusSlider.Parent = mainFrame
+radiusSlider.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        local num = tonumber(radiusSlider.Text)
+        if num and num >= 10 and num <= 100 then
+            settings.harvestRadius = num
+            radiusSlider.Text = tostring(num)
+            radiusLabel.Text = "Harvest Radius: " .. num
+        else
+            radiusSlider.Text = tostring(settings.harvestRadius)
+        end
     end
-})
+end)
+yOffset = yOffset + 30
 
--- Settings Tab
-SettingsTab:CreateSlider({
-    Name = "Harvest Radius",
-    Range = {10, 100},
-    Increment = 5,
-    Suffix = "studs",
-    CurrentValue = settings.harvestRadius,
-    Flag = "HarvestRadius",
-    Callback = function(v) settings.harvestRadius = v end
-})
+-- Preferred seed dropdown
+local seedLabel = Instance.new("TextLabel")
+seedLabel.Size = UDim2.new(0.9, 0, 0, 20)
+seedLabel.Position = UDim2.new(0.05, 0, 0, yOffset)
+seedLabel.BackgroundTransparency = 1
+seedLabel.Text = "Preferred Seed: " .. settings.preferredSeed
+seedLabel.TextColor3 = Color3.fromRGB(255,255,255)
+seedLabel.Font = Enum.Font.Gotham
+seedLabel.TextSize = 12
+seedLabel.Parent = mainFrame
+yOffset = yOffset + 22
 
-SettingsTab:CreateDropdown({
-    Name = "Preferred Seed Type",
-    Options = {"Rainbow", "Gold", "Normal"},
-    CurrentOption = settings.preferredSeed,
-    Flag = "PreferredSeed",
-    Callback = function(opt) settings.preferredSeed = opt end
-})
+local seedBtn = Instance.new("TextButton")
+seedBtn.Size = UDim2.new(0.9, 0, 0, 25)
+seedBtn.Position = UDim2.new(0.05, 0, 0, yOffset)
+seedBtn.BackgroundColor3 = Color3.fromRGB(70,70,70)
+seedBtn.Text = settings.preferredSeed
+seedBtn.TextColor3 = Color3.fromRGB(255,255,255)
+seedBtn.Parent = mainFrame
+local seedOptions = {"Rainbow", "Gold", "Normal"}
+local seedIndex = 1
+for i, opt in ipairs(seedOptions) do
+    if opt == settings.preferredSeed then seedIndex = i break end
+end
+seedBtn.MouseButton1Click:Connect(function()
+    seedIndex = seedIndex % #seedOptions + 1
+    settings.preferredSeed = seedOptions[seedIndex]
+    seedBtn.Text = settings.preferredSeed
+    seedLabel.Text = "Preferred Seed: " .. settings.preferredSeed
+end)
+yOffset = yOffset + 30
 
-SettingsTab:CreateSlider({
-    Name = "Min Seeds Before Auto-Buy",
-    Range = {1, 20},
-    Increment = 1,
-    Suffix = "seeds",
-    CurrentValue = settings.minSeeds,
-    Flag = "MinSeeds",
-    Callback = function(v) settings.minSeeds = v end
-})
+-- Min seeds slider
+local minLabel = Instance.new("TextLabel")
+minLabel.Size = UDim2.new(0.9, 0, 0, 20)
+minLabel.Position = UDim2.new(0.05, 0, 0, yOffset)
+minLabel.BackgroundTransparency = 1
+minLabel.Text = "Min Seeds Before Buy: " .. settings.minSeeds
+minLabel.TextColor3 = Color3.fromRGB(255,255,255)
+minLabel.Font = Enum.Font.Gotham
+minLabel.TextSize = 12
+minLabel.Parent = mainFrame
+yOffset = yOffset + 22
 
--- Info Tab
-InfoTab:CreateLabel("Grow A Garden 2 - Fully Upgraded")
-InfoTab:CreateLabel("Version: 3.0 (June 2026)")
-InfoTab:CreateLabel("All features work with latest update")
-InfoTab:CreateParagraph("Credits", "Rayfield UI by shlexware\nAutoFarm logic by ScriptMaster")
-InfoTab:CreateButton({
-    Name = "Support Discord (customize)",
-    Callback = function()
-        Rayfield:Notify({
-            Title = "Discord",
-            Content = "Join our server: discord.gg/example",
-            Duration = 3
-        })
+local minSlider = Instance.new("TextBox")
+minSlider.Size = UDim2.new(0.9, 0, 0, 25)
+minSlider.Position = UDim2.new(0.05, 0, 0, yOffset)
+minSlider.BackgroundColor3 = Color3.fromRGB(60,60,60)
+minSlider.Text = tostring(settings.minSeeds)
+minSlider.TextColor3 = Color3.fromRGB(255,255,255)
+minSlider.PlaceholderText = "1-20"
+minSlider.Parent = mainFrame
+minSlider.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        local num = tonumber(minSlider.Text)
+        if num and num >= 1 and num <= 20 then
+            settings.minSeeds = num
+            minSlider.Text = tostring(num)
+            minLabel.Text = "Min Seeds Before Buy: " .. num
+        else
+            minSlider.Text = tostring(settings.minSeeds)
+        end
     end
-})
+end)
+
+-- Toggle GUI with K key
+userInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.K then
+        screenGui.Enabled = not screenGui.Enabled
+    end
+end)
 
 -- ==============================
 --          START SCRIPT
 -- ==============================
 print("====================================")
-print("Grow A Garden 2 - Ultimate AutoFarm")
-print("Version 3.0 - Fully Upgraded")
-print("GUI Key: K")
+print("Grow A Garden 2 - Delta AutoFarm")
+print("All features loaded. Press K to open GUI.")
 print("====================================")
 
-Rayfield:Notify({
-    Title = "✅ Script Loaded",
-    Content = "All systems online. Press K to open GUI.",
-    Duration = 5
-})
-
 spawn(mainLoop)
-if settings.antiAFK then
-    spawn(antiAFK)
-end
+spawn(antiAFK)
