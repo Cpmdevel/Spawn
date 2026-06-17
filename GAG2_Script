@@ -1,63 +1,100 @@
 --[[
-    GROW A GARDEN 2 – ULTIMATE AUTO‑FARM (STEALTH EDITION)
-    - No GUI, no chat spam, no visible changes.
-    - Auto‑detects remotes, leaderstats, buttons, and collectibles.
-    - Uses low‑frequency loops to avoid rate‑limiting.
+    GROW A GARDEN 2 – ULTIMATE AUTO‑FARM (v2.1)
     - Works with Delta Executor (mobile) and all modern executors.
-    - Updated: June 2026 – adapts to common game updates.
+    - No key, no GUI, no chat spam – pure stealth.
+    - Auto‑click "Generate", auto‑collect crops, auto‑plant seeds,
+      auto‑sell, auto‑buy upgrades, remote spam, and leaderstat hack.
+    - Updated: June 2026 – uses dynamic detection for all objects.
 ]]
 
 local player = game.Players.LocalPlayer
 local replicatedStorage = game:GetService("ReplicatedStorage")
 local runService = game:GetService("RunService")
-local virtualUser = (syn and syn.request) and syn  -- for advanced input if needed
+local virtualInput = game:GetService("VirtualInputManager") -- for mobile taps (Delta)
 
--- ===== CONFIGURATION =====
+-- ===== CONFIG (adjust delays if needed) =====
 local CONFIG = {
-    LeaderstatCash = true,      -- Try to set leaderstats cash
-    ClickGenerate = true,       -- Auto‑click the "Generate" button
-    SpamRemotes = true,         -- Fire all possible remotes with money arguments
-    AutoCollect = true,         -- Click on crops/collectables
-    AutoPlant = true,           -- Click on plots to plant seeds
-    AutoBuy = true,             -- Click on buy/upgrade buttons
-    ClickDelay = 0.3,           -- Delay between clicks (increase if throttled)
-    RemoteDelay = 0.5,          -- Delay between remote spam
+    ClickGenerate = true,
+    AutoCollect = true,
+    AutoPlant = true,
+    AutoSell = true,
+    AutoBuy = true,
+    RemoteSpam = true,
+    LeaderstatHack = true,
+    ClickDelay = 0.25,
+    RemoteDelay = 0.4,
     CollectDelay = 0.5,
-    PlantDelay = 1.0,
-    BuyDelay = 0.4,
+    PlantDelay = 0.8,
+    SellDelay = 0.5,
+    BuyDelay = 0.3,
 }
 
--- ===== UTILITY FUNCTIONS =====
-local function findFirstDescendant(parent, className, predicate)
+-- ===== UTILITY =====
+local function findDescendants(parent, className, predicate)
+    local results = {}
     for _, obj in ipairs(parent:GetDescendants()) do
         if obj:IsA(className) and (not predicate or predicate(obj)) then
-            return obj
+            table.insert(results, obj)
         end
     end
-    return nil
+    return results
 end
 
-local function findAllDescendants(parent, className, predicate)
-    local list = {}
-    for _, obj in ipairs(parent:GetDescendants()) do
-        if obj:IsA(className) and (not predicate or predicate(obj)) then
-            table.insert(list, obj)
+local function safeClick(obj)
+    if not obj then return end
+    pcall(function()
+        if obj:IsA("TextButton") or obj:IsA("ImageButton") then
+            obj:Click()
+        elseif obj:IsA("ClickDetector") then
+            obj:Click()
+        elseif obj:IsA("ProximityPrompt") then
+            obj:InputHoldStart()
+            wait(0.1)
+            obj:InputHoldEnd()
         end
-    end
-    return list
+    end)
 end
 
--- ===== 1. LEADERSTATS OVERWRITE =====
-local function leaderstatHack()
-    if not CONFIG.LeaderstatCash then return false end
+-- ===== 1. LEADERSTATS HACK =====
+local function hackLeaderstats()
+    if not CONFIG.LeaderstatHack then return end
     local ls = player:FindFirstChild("leaderstats")
-    if not ls then return false end
-    local cash = ls:FindFirstChild("Sheckles") or ls:FindFirstChild("Cash") or ls:FindFirstChild("Money")
-    if cash and (cash:IsA("IntValue") or cash:IsA("NumberValue")) then
+    if ls then
+        local cash = ls:FindFirstChild("Sheckles") or ls:FindFirstChild("Cash") or ls:FindFirstChild("Money")
+        if cash and (cash:IsA("IntValue") or cash:IsA("NumberValue")) then
+            spawn(function()
+                while true do
+                    cash.Value = 999999999
+                    wait(0.1)
+                end
+            end)
+            return true
+        end
+    end
+    return false
+end
+
+-- ===== 2. AUTO‑CLICK GENERATE =====
+local function clickGenerate()
+    if not CONFIG.ClickGenerate then return end
+    local gui = player:FindFirstChild("PlayerGui")
+    if not gui then return end
+    local btn = nil
+    for _, obj in ipairs(gui:GetDescendants()) do
+        if obj:IsA("TextButton") or obj:IsA("ImageButton") then
+            local n = obj.Name:lower()
+            local t = (obj.Text or ""):lower()
+            if n:find("generate") or n:find("gen") or t:find("generate") or t:find("gen") then
+                btn = obj
+                break
+            end
+        end
+    end
+    if btn then
         spawn(function()
             while true do
-                cash.Value = 999999999
-                wait(0.1)
+                safeClick(btn)
+                wait(CONFIG.ClickDelay)
             end
         end)
         return true
@@ -65,34 +102,13 @@ local function leaderstatHack()
     return false
 end
 
--- ===== 2. AUTO‑CLICK GENERATE BUTTON =====
-local function clickGenerate()
-    if not CONFIG.ClickGenerate then return false end
-    local gui = player:FindFirstChild("PlayerGui")
-    if not gui then return false end
-    local btn = findFirstDescendant(gui, "TextButton", function(b)
-        local n = b.Name:lower()
-        local t = (b.Text or ""):lower()
-        return n:find("generate") or n:find("gen") or t:find("generate") or t:find("gen")
-    end)
-    if not btn then return false end
-    spawn(function()
-        while true do
-            pcall(btn.Click, btn)
-            wait(CONFIG.ClickDelay)
-        end
-    end)
-    return true
-end
-
--- ===== 3. REMOTE SPAM (smart injection) =====
+-- ===== 3. REMOTE SPAM =====
 local function spamRemotes()
-    if not CONFIG.SpamRemotes then return false end
-    local remotes = findAllDescendants(replicatedStorage, "RemoteEvent")
-    local functions = findAllDescendants(replicatedStorage, "RemoteFunction")
-    if #remotes == 0 and #functions == 0 then return false end
+    if not CONFIG.RemoteSpam then return end
+    local remotes = findDescendants(replicatedStorage, "RemoteEvent")
+    local funcs = findDescendants(replicatedStorage, "RemoteFunction")
+    if #remotes == 0 and #funcs == 0 then return false end
 
-    -- Common argument patterns used in farming games
     local argsList = {
         {"Generate"},
         {"collect", 999999},
@@ -105,6 +121,9 @@ local function spamRemotes()
         {"Harvest", "all"},
         {"Sell", "all"},
         {"AutoCollect", true},
+        {"Garden", "collect"},
+        {"Plant", "seed"},
+        {"Water", "all"},
     }
 
     spawn(function()
@@ -114,7 +133,7 @@ local function spamRemotes()
                     pcall(remote.FireServer, remote, table.unpack(args))
                 end
             end
-            for _, func in ipairs(functions) do
+            for _, func in ipairs(funcs) do
                 for _, args in ipairs(argsList) do
                     pcall(func.InvokeServer, func, table.unpack(args))
                 end
@@ -125,28 +144,19 @@ local function spamRemotes()
     return true
 end
 
--- ===== 4. AUTO‑COLLECT CROPS =====
+-- ===== 4. AUTO‑COLLECT =====
 local function autoCollect()
     if not CONFIG.AutoCollect then return end
     spawn(function()
         while true do
-            -- Search workspace for clickable objects with crop/plant names
             for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj:IsA("Model") or obj:IsA("Part") then
-                    local name = obj.Name:lower()
-                    if name:find("crop") or name:find("plant") or name:find("tree") or name:find("collect") or name:find("harvest") or name:find("seed") then
-                        -- Try ClickDetector
+                if obj:IsA("Model") or obj:IsA("Part") or obj:IsA("Tool") then
+                    local n = obj.Name:lower()
+                    if n:find("crop") or n:find("plant") or n:find("tree") or n:find("collect") or n:find("harvest") or n:find("fruit") then
                         local cd = obj:FindFirstChild("ClickDetector")
-                        if cd and cd:IsA("ClickDetector") then
-                            pcall(cd.Click, cd)
-                        end
-                        -- Try ProximityPrompt
+                        if cd then safeClick(cd) end
                         local pp = obj:FindFirstChild("ProximityPrompt")
-                        if pp and pp:IsA("ProximityPrompt") then
-                            pcall(pp.InputHoldStart, pp)
-                            wait(0.1)
-                            pcall(pp.InputHoldEnd, pp)
-                        end
+                        if pp then safeClick(pp) end
                     end
                 end
             end
@@ -155,25 +165,19 @@ local function autoCollect()
     end)
 end
 
--- ===== 5. AUTO‑PLANT SEEDS =====
+-- ===== 5. AUTO‑PLANT =====
 local function autoPlant()
     if not CONFIG.AutoPlant then return end
     spawn(function()
         while true do
             for _, obj in ipairs(workspace:GetDescendants()) do
                 if obj:IsA("Model") or obj:IsA("Part") then
-                    local name = obj.Name:lower()
-                    if name:find("plot") or name:find("soil") or name:find("garden") or name:find("pot") then
+                    local n = obj.Name:lower()
+                    if n:find("plot") or n:find("soil") or n:find("garden") or n:find("pot") or n:find("bed") then
                         local cd = obj:FindFirstChild("ClickDetector")
-                        if cd and cd:IsA("ClickDetector") then
-                            pcall(cd.Click, cd)
-                        end
+                        if cd then safeClick(cd) end
                         local pp = obj:FindFirstChild("ProximityPrompt")
-                        if pp and pp:IsA("ProximityPrompt") then
-                            pcall(pp.InputHoldStart, pp)
-                            wait(0.1)
-                            pcall(pp.InputHoldEnd, pp)
-                        end
+                        if pp then safeClick(pp) end
                     end
                 end
             end
@@ -182,19 +186,18 @@ local function autoPlant()
     end)
 end
 
--- ===== 6. AUTO‑BUY UPGRADES =====
-local function autoBuy()
-    if not CONFIG.AutoBuy then return end
+-- ===== 6. AUTO‑SELL =====
+local function autoSell()
+    if not CONFIG.AutoSell then return end
+    local gui = player:FindFirstChild("PlayerGui")
+    if not gui then return end
     spawn(function()
         while true do
-            local gui = player:FindFirstChild("PlayerGui")
-            if gui then
-                for _, btn in ipairs(findAllDescendants(gui, "TextButton")) do
-                    local t = (btn.Text or ""):lower()
-                    if t:find("buy") or t:find("upgrade") or t:find("purchase") or t:find("unlock") then
-                        pcall(btn.Click, btn)
-                        wait(CONFIG.BuyDelay)
-                    end
+            for _, btn in ipairs(findDescendants(gui, "TextButton")) do
+                local t = (btn.Text or ""):lower()
+                if t:find("sell") or t:find("cash in") or t:find("collect money") then
+                    safeClick(btn)
+                    wait(CONFIG.SellDelay)
                 end
             end
             wait(1)
@@ -202,19 +205,33 @@ local function autoBuy()
     end)
 end
 
--- ===== EXECUTION =====
-local status = {
-    Leaderstat = leaderstatHack(),
-    Generate = clickGenerate(),
-    Remotes = spamRemotes(),
-}
+-- ===== 7. AUTO‑BUY UPGRADES =====
+local function autoBuy()
+    if not CONFIG.AutoBuy then return end
+    local gui = player:FindFirstChild("PlayerGui")
+    if not gui then return end
+    spawn(function()
+        while true do
+            for _, btn in ipairs(findDescendants(gui, "TextButton")) do
+                local t = (btn.Text or ""):lower()
+                if t:find("buy") or t:find("upgrade") or t:find("purchase") or t:find("unlock") then
+                    safeClick(btn)
+                    wait(CONFIG.BuyDelay)
+                end
+            end
+            wait(1)
+        end
+    end)
+end
+
+-- ===== START ALL MODULES =====
+hackLeaderstats()
+clickGenerate()
+spamRemotes()
 autoCollect()
 autoPlant()
+autoSell()
 autoBuy()
 
--- Silent feedback (no prints unless you remove comment)
--- print("[GAG2] Status: Leaderstat=" .. tostring(status.Leaderstat) .. " Generate=" .. tostring(status.Generate) .. " Remotes=" .. tostring(status.Remotes))
--- print("[GAG2] Auto‑farm running in stealth mode.")
-
--- Keep the script alive (prevents executor from closing)
-while true do wait(1) end
+-- Keep alive
+while true do wait(60) end
